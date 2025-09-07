@@ -81,14 +81,11 @@
             </div>
             <p id="api-key-status" class="text-xs text-gray-500 mt-2">You need a free Gemini API key from <a href="https://aistudio.google.com/apikey" target="_blank" class="text-blue-600 hover:underline">Google AI Studio</a> to use this app.</p>
         </div>
-        <div class="flex space-x-4">
-            <button id="toggle-button" class="px-8 py-4 bg-blue-600 text-white font-bold rounded-lg shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-transform transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:scale-100">
-                Start Coaching
-            </button>
-            <button id="drill-button" class="px-8 py-4 bg-teal-500 text-white font-bold rounded-lg shadow-lg hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-opacity-50 transition-transform transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:scale-100">
-                ✨ Get Drill of the Day
-            </button>
-        </div>
+        
+        <button id="toggle-button" class="px-8 py-4 bg-blue-600 text-white font-bold rounded-lg shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-transform transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:scale-100">
+            Start Coaching
+        </button>
+
          <button id="summary-button" class="hidden px-8 py-4 bg-purple-500 text-white font-bold rounded-lg shadow-lg hover:bg-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50 transition-transform transform hover:scale-105">
             ✨ Summarize My Session
         </button>
@@ -115,7 +112,6 @@
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const toggleButton = document.getElementById('toggle-button');
-        const drillButton = document.getElementById('drill-button');
         const summaryButton = document.getElementById('summary-button');
         const statusOverlay = document.getElementById('status-overlay');
         const statusText = document.getElementById('status-text');
@@ -148,7 +144,6 @@
 
         // --- Event Listeners ---
         toggleButton.addEventListener('click', toggleCoaching);
-        drillButton.addEventListener('click', getDrillOfTheDay);
         summaryButton.addEventListener('click', summarizeSession);
         modalClose.addEventListener('click', closeModal);
         modalBackdrop.addEventListener('click', closeModal);
@@ -188,7 +183,6 @@
         function checkApiKeyState() {
             const hasKey = !!userApiKey;
             toggleButton.disabled = !hasKey;
-            drillButton.disabled = !hasKey;
             if (!hasKey) {
                 feedbackText.textContent = 'Please enter and save your Gemini API key to begin.';
             } else if (!isCoaching) {
@@ -231,7 +225,6 @@
             isCoaching = true;
             sessionFeedbackLog = []; // Reset log for new session
             summaryButton.classList.add('hidden');
-            drillButton.disabled = true;
             toggleButton.textContent = 'Stop Coaching';
             toggleButton.classList.replace('bg-blue-600', 'bg-red-600');
             toggleButton.classList.replace('hover:bg-blue-700', 'hover:bg-red-700');
@@ -249,7 +242,6 @@
 
         function stopCoaching() {
             isCoaching = false;
-            drillButton.disabled = false;
             if (coachingTimeout) {
                 clearTimeout(coachingTimeout);
                 coachingTimeout = null;
@@ -298,18 +290,6 @@
                     updateStatus(`Next analysis in ${CAPTURE_INTERVAL / 1000}s.`, true);
                     coachingTimeout = setTimeout(coachingLoop, CAPTURE_INTERVAL);
                 }
-            }
-        }
-        
-        async function getDrillOfTheDay() {
-            const prompt = `You are an expert tennis coach. Generate a creative and effective tennis drill for a solo player that can be done against a wall or with self-feeding. The drill should focus on improving one of these key areas: forehand consistency, backhand topspin, serve placement, or footwork. Clearly describe the goal of the drill, the setup, and the steps to perform it in a concise, easy-to-understand format using markdown for structure (e.g., ### Goal, ### Setup, ### Steps).`;
-            openModal("Generating Drill...", "✨ Drill of the Day");
-            try {
-                const drillText = await generateText(prompt);
-                updateModalBody(drillText);
-            } catch (error) {
-                console.error("Error getting drill:", error);
-                updateModalBody("Sorry, I couldn't generate a drill right now. Please try again later.");
             }
         }
         
@@ -486,5 +466,4 @@
     </script>
 </body>
 </html>
-
 
