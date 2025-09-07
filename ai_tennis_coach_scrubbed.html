@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Real-Time AI Tennis Coach</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body {
             font-family: 'Inter', sans-serif;
+            overscroll-behavior-y: contain; /* Prevents pull-to-refresh on mobile */
         }
         .video-container {
             position: relative;
@@ -18,7 +19,6 @@
             border-radius: 0.75rem;
             overflow: hidden;
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-            aspect-ratio: 16 / 9;
             background-color: #000;
         }
         #video {
@@ -66,7 +66,7 @@
     </div>
 
     <div id="video-container" class="video-container">
-        <video id="video" playsinline autoplay muted></video>
+        <video id="video" playsinline autoplay></video>
         <canvas id="canvas" class="hidden"></canvas>
         <div id="status-overlay" class="opacity-0">
             <p id="status-text">Initializing...</p>
@@ -100,8 +100,8 @@
          <button id="summary-button" class="hidden px-8 py-4 bg-purple-500 text-white font-bold rounded-lg shadow-lg hover:bg-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50 transition-transform transform hover:scale-105">
             ✨ Summarize My Session
         </button>
-        <div id="feedback-container" class="w-full bg-white p-6 rounded-lg shadow-md text-center min-h-[80px] flex items-center justify-center">
-            <p id="feedback-text" class="text-gray-500">Your coaching advice will appear here.</p>
+        <div id="feedback-container" class="w-full bg-white p-4 rounded-lg shadow-md min-h-[80px] flex items-center justify-center">
+            <p id="feedback-text" class="text-gray-500 text-center">Your coaching advice will appear here.</p>
         </div>
     </div>
 
@@ -120,6 +120,7 @@
 
     <script>
         // --- DOM Elements ---
+        const videoContainer = document.getElementById('video-container');
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const toggleButton = document.getElementById('toggle-button');
@@ -138,7 +139,6 @@
         const saveKeyButton = document.getElementById('save-key-button');
         const apiKeyStatus = document.getElementById('api-key-status');
 
-
         // --- State and Configuration ---
         let stream;
         let coachingTimeout = null;
@@ -147,7 +147,8 @@
         let userApiKey = '';
         let hasMultipleCameras = false;
         let currentFacingMode = 'environment';
-        let isAudioPlaying = false;
+        let audioContext;
+        let gainNode;
         const CAPTURE_INTERVAL = 10000;
 
         // --- Gemini API Configuration ---
@@ -156,7 +157,6 @@
 
         const VISION_PROMPT = `You are an expert tennis coach analyzing a tennis player's form from a single image. Your analysis should be based on the 8 phases of a world-class stroke: Split Step, Positioning, Unit Turn, Back Swing, Acceleration, Contact, Follow Through, and Recovery. After analyzing all 8 phases, your task is to identify the single most critical area for improvement. Your entire output MUST be a single, concise sentence that summarizes this one key piece of advice. This advice must be a maximum of 2 sentences and under 30 words. For example: 'Focus on extending your wrist more during the backswing for better racket lag.' or 'Your unit turn looks great, but try to get your contact point further in front.' If you cannot identify any clear flaw or if the player's form looks good, do not return any text. Do not provide the full 8-point breakdown in your response.`;
 
-
         // --- Event Listeners ---
         toggleButton.addEventListener('click', toggleCoaching);
         flipCameraButton.addEventListener('click', flipCamera);
@@ -164,6 +164,7 @@
         modalClose.addEventListener('click', closeModal);
         modalBackdrop.addEventListener('click', closeModal);
         saveKeyButton.addEventListener('click', saveApiKey);
+        window.addEventListener('resize', handleResize);
         document.addEventListener('DOMContentLoaded', initializeApp);
 
 
@@ -178,6 +179,15 @@
                 apiKeyStatus.classList.add('text-green-600');
             }
             checkApiKeyState();
+            handleResize(); // Set initial size
+        }
+        
+        function handleResize() {
+            if (window.innerHeight > window.innerWidth) {
+                videoContainer.style.aspectRatio = '9 / 16';
+            } else {
+                videoContainer.style.aspectRatio = '16 / 9';
+            }
         }
 
         function saveApiKey() {
@@ -218,44 +228,39 @@
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
             }
-
-            const constraints = {
-                video: {
-                    facingMode: currentFacingMode
-                },
-                audio: false
-            };
-
+            // Request both video and audio
+            const constraints = { video: { facingMode: currentFacingMode }, audio: true };
             try {
-                updateStatus('Requesting camera access...', true);
+                updateStatus('Requesting camera & mic access...', true);
                 stream = await navigator.mediaDevices.getUserMedia(constraints);
+                
+                // Set video source but keep it muted in the HTML element
                 video.srcObject = stream;
-                
-                // This replaces the previous, more complex promise structure.
-                // Awaiting video.play() directly is more robust against autoplay errors.
+                video.muted = true; 
                 await video.play();
-                
-                // Mirror the video if it's the front camera ('user')
-                video.style.transform = currentFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
-                
-                updateStatus('Camera started.', true);
 
-                // Check for multiple cameras only once
+                // Web Audio API setup for silent mic input
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const microphoneSource = audioContext.createMediaStreamSource(stream);
+                    gainNode = audioContext.createGain();
+                    gainNode.gain.setValueAtTime(0, audioContext.currentTime); // Mute microphone
+                    microphoneSource.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                }
+
+                video.style.transform = currentFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+                updateStatus('Camera started.', true);
                 if (!hasMultipleCameras) {
                     const devices = await navigator.mediaDevices.enumerateDevices();
-                    const videoInputs = devices.filter(d => d.kind === 'videoinput');
-                    if (videoInputs.length > 1) {
-                        hasMultipleCameras = true;
-                    }
+                    hasMultipleCameras = devices.filter(d => d.kind === 'videoinput').length > 1;
                 }
-                
                 if (hasMultipleCameras) {
                     flipCameraButton.classList.remove('hidden');
                 }
-
             } catch (error) {
-                console.error('Error accessing camera:', error);
-                updateStatus('Camera access denied. Please enable camera permissions.', false, true);
+                console.error('Error accessing camera/mic:', error);
+                updateStatus('Camera/mic access denied. Please enable permissions.', false, true);
                 throw error;
             }
         }
@@ -273,7 +278,6 @@
             toggleButton.classList.replace('bg-blue-600', 'bg-red-600');
             toggleButton.classList.replace('hover:bg-blue-700', 'hover:bg-red-700');
             feedbackText.textContent = "Let's begin! I'll provide feedback shortly.";
-            
             try {
                 await startCamera();
                 updateStatus('Coaching started. Capturing first clip...', true, false, true);
@@ -285,20 +289,16 @@
 
         function stopCoaching() {
             isCoaching = false;
-            if (coachingTimeout) {
-                clearTimeout(coachingTimeout);
-                coachingTimeout = null;
-            }
-
+            if (coachingTimeout) clearTimeout(coachingTimeout);
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
                 stream = null;
                 video.srcObject = null;
             }
-            
-            if(sessionFeedbackLog.length > 0){
-                summaryButton.classList.remove('hidden');
+            if (audioContext && audioContext.state !== 'closed') {
+                audioContext.close().then(() => audioContext = null);
             }
+            if(sessionFeedbackLog.length > 0) summaryButton.classList.remove('hidden');
             toggleButton.textContent = 'Start Coaching';
             toggleButton.classList.replace('bg-red-600', 'bg-blue-600');
             toggleButton.classList.replace('hover:bg-red-700', 'hover:bg-blue-700');
@@ -309,47 +309,35 @@
 
         async function coachingLoop() {
             if (!isCoaching) return;
-            
             try {
-                if (isAudioPlaying) {
-                    coachingTimeout = setTimeout(coachingLoop, 2000);
-                    return;
-                }
-
                 updateStatus('Capturing your form...', true, false, true);
                 const base64Image = captureFrame();
-
                 if (base64Image) {
                     updateStatus('Analyzing your form with Gemini...', true, false, true);
                     const analysisText = await analyzeFrame(base64Image);
-
                     if (analysisText) {
                         feedbackText.textContent = analysisText;
                         sessionFeedbackLog.push(analysisText);
-                        updateStatus('Generating audio feedback...', true, false, true);
                         await speakFeedback(analysisText);
                     } else {
                          updateStatus(`Looking good! Next analysis in ${CAPTURE_INTERVAL / 1000}s.`, true);
                     }
                 } else {
-                    console.warn("Failed to capture frame, stream might be initializing. Will retry.");
+                    console.warn("Failed to capture frame, will retry.");
                     updateStatus('Waiting for camera...', true, false, true);
                 }
-                
             } catch (error) {
                 console.error("Error in coaching loop:", error);
                 updateStatus('An error occurred. Retrying soon.', true, true);
-                feedbackText.textContent = "Sorry, I couldn't analyze that shot. Let's try again.";
+                feedbackText.textContent = "Sorry, I couldn't analyze that shot.";
             } finally {
-                if (isCoaching) {
-                    coachingTimeout = setTimeout(coachingLoop, CAPTURE_INTERVAL);
-                }
+                if (isCoaching) coachingTimeout = setTimeout(coachingLoop, CAPTURE_INTERVAL);
             }
         }
         
         async function summarizeSession() {
             if (sessionFeedbackLog.length === 0) {
-                openModal("No feedback was recorded in the last session.", "📝 Session Summary");
+                openModal("No feedback was recorded in this session.", "📝 Session Summary");
                 return;
             }
             const feedbackString = sessionFeedbackLog.join('. ');
@@ -360,14 +348,12 @@
                 updateModalBody(summaryText);
             } catch (error) {
                 console.error("Error summarizing session:", error);
-                updateModalBody("Sorry, I couldn't generate a summary right now. Please try again later.");
+                updateModalBody("Sorry, I couldn't generate a summary right now.");
             }
         }
         
         async function generateText(prompt) {
-            const payload = {
-                contents: [{ parts: [{ text: prompt }] }],
-            };
+            const payload = { contents: [{ parts: [{ text: prompt }] }] };
             const response = await fetch(`${TEXT_API_URL}?key=${userApiKey}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -385,8 +371,6 @@
             canvas.width = settings.width;
             canvas.height = settings.height;
             const context = canvas.getContext('2d');
-            
-            // Adjust for mirrored front camera when capturing
             if (currentFacingMode === 'user') {
                 context.scale(-1, 1);
                 context.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
@@ -398,78 +382,69 @@
 
         async function analyzeFrame(base64ImageData) {
             const payload = {
-                contents: [{
-                    parts: [
-                        { text: VISION_PROMPT },
-                        { inlineData: { mimeType: "image/jpeg", data: base64ImageData } }
-                    ]
-                }],
+                contents: [{ parts: [{ text: VISION_PROMPT }, { inlineData: { mimeType: "image/jpeg", data: base64ImageData } }] }],
             };
-
             const response = await fetch(`${TEXT_API_URL}?key=${userApiKey}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
-
             if (!response.ok) throw new Error(`API Error: ${response.status} ${response.statusText}`);
             const result = await response.json();
             return result.candidates?.[0]?.content?.parts?.[0]?.text || null;
         }
         
         function speakFeedback(text) {
+            if (!text || !audioContext) return Promise.resolve();
+            updateStatus('Playing feedback...', true);
             return new Promise(async (resolve, reject) => {
-                isAudioPlaying = true;
                 const payload = {
                     contents: [{ parts: [{ text: text }] }],
                     generationConfig: { 
                         responseModalities: ["AUDIO"], 
-                        speechConfig: { 
-                            voiceConfig: { 
-                                prebuiltVoiceConfig: { voiceName: "Kore" } 
-                            } 
-                        } 
+                        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } } 
                     }
                 };
-
                 try {
                     const response = await fetch(`${TTS_API_URL}?key=${userApiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                    if (!response.ok) {
-                        const errorBody = await response.text();
-                        console.error("TTS API Error Body:", errorBody);
-                        throw new Error(`TTS API Error: ${response.status} ${response.statusText}`);
-                    }
+                    if (!response.ok) throw new Error(`TTS API Error: ${response.status} ${response.statusText}`);
+                    
                     const result = await response.json();
                     const audioData = result.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
                     const mimeType = result.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType;
 
-                    if (audioData && mimeType && mimeType.startsWith("audio/")) {
+                    if (audioData && mimeType?.startsWith("audio/")) {
                         const sampleRateMatch = mimeType.match(/rate=(\d+)/);
-                        if (!sampleRateMatch) throw new Error("Sample rate not found in mimeType");
+                        if (!sampleRateMatch) throw new Error("Sample rate not found");
                         
                         const sampleRate = parseInt(sampleRateMatch[1], 10);
                         const pcmData = base64ToArrayBuffer(audioData);
                         const pcm16 = new Int16Array(pcmData);
                         const wavBlob = pcmToWav(pcm16, 1, sampleRate);
-                        const audioUrl = URL.createObjectURL(wavBlob);
-                        const audio = new Audio(audioUrl);
+                        const arrayBuffer = await wavBlob.arrayBuffer();
 
-                        audio.onended = () => { isAudioPlaying = false; resolve(); };
-                        audio.onerror = (err) => { 
-                            console.error("Error playing audio.", err); 
-                            updateStatus('Error playing audio.', true, true); 
-                            isAudioPlaying = false; 
-                            reject(err); 
-                        };
-                        audio.play();
+                        audioContext.decodeAudioData(arrayBuffer, 
+                            (buffer) => {
+                                const source = audioContext.createBufferSource();
+                                source.buffer = buffer;
+                                source.connect(audioContext.destination);
+                                source.onended = () => {
+                                    if(isCoaching) updateStatus(`Next analysis in ${CAPTURE_INTERVAL / 1000}s.`, true);
+                                    resolve();
+                                };
+                                source.start(0);
+                            }, 
+                            (error) => {
+                                console.error('Error decoding audio data:', error);
+                                reject(error);
+                            }
+                        );
                     } else {
-                        console.error("No audio data received from TTS API.");
-                        isAudioPlaying = false;
-                        resolve();
+                        throw new Error("No audio data received");
                     }
                 } catch (error) {
                     console.error("Failed to speak feedback:", error);
-                    isAudioPlaying = false;
+                    updateStatus('Error playing audio.', true, true);
                     reject(error);
                 }
             });
@@ -521,13 +496,12 @@
             const bitsPerSample = 16;
             const blockAlign = numChannels * bitsPerSample / 8;
             const byteRate = sampleRate * blockAlign;
-
             writeString(view, 0, 'RIFF');
             view.setUint32(4, 36 + pcmData.length * 2, true);
             writeString(view, 8, 'WAVE');
             writeString(view, 12, 'fmt ');
             view.setUint32(16, 16, true);
-            view.setUint16(20, 1, true); // PCM
+            view.setUint16(20, 1, true);
             view.setUint16(22, numChannels, true);
             view.setUint32(24, sampleRate, true);
             view.setUint32(28, byteRate, true);
@@ -535,11 +509,9 @@
             view.setUint16(34, bitsPerSample, true);
             writeString(view, 36, 'data');
             view.setUint32(40, pcmData.length * 2, true);
-            
             for (let i = 0; i < pcmData.length; i++) {
                 view.setInt16(44 + i * 2, pcmData[i], true);
             }
-            
             return new Blob([view], { type: 'audio/wav' });
         }
 
