@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale-1.0">
+    <title>Real-Time AI Tennis Coach</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .video-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin: auto;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        #video {
+            display: block;
+            width: 100%;
+            height: auto;
+            transform: scaleX(-1); /* Mirror mode */
+        }
+        #status-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.6);
+            color: white;
+            padding: 0.75rem 1rem;
+            text-align: center;
+            font-weight: 500;
+            transition: opacity 0.3s ease-in-out;
+        }
+        .pulsing {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.7;
+            }
+        }
+        /* Modal Styles */
+        #modal-backdrop {
+            transition: opacity 0.3s ease-in-out;
+        }
+        #modal-content {
+            transition: transform 0.3s ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-4xl text-center mb-6">
+        <h1 class="text-4xl font-bold text-gray-900">AI Tennis Coach</h1>
+        <p class="text-lg text-gray-600 mt-2">Get real-time feedback on your form. Powered by Gemini.</p>
+    </div>
+
+    <div class="video-container bg-black">
+        <video id="video" playsinline autoplay muted></video>
+        <canvas id="canvas" class="hidden"></canvas>
+        <div id="status-overlay" class="opacity-0">
+            <p id="status-text">Initializing...</p>
+        </div>
+    </div>
+
+    <div class="mt-6 flex flex-col items-center space-y-4 w-full max-w-4xl">
+        <div class="flex space-x-4">
+            <button id="toggle-button" class="px-8 py-4 bg-blue-600 text-white font-bold rounded-lg shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-transform transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:scale-100">
+                Start Coaching
+            </button>
+            <button id="drill-button" class="px-8 py-4 bg-green-500 text-white font-bold rounded-lg shadow-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 transition-transform transform hover:scale-105">
+                ✨ Get Drill of the Day
+            </button>
+        </div>
+         <button id="summary-button" class="hidden px-8 py-4 bg-purple-500 text-white font-bold rounded-lg shadow-lg hover:bg-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50 transition-transform transform hover:scale-105">
+            ✨ Summarize My Session
+        </button>
+        <div id="feedback-container" class="w-full bg-white p-6 rounded-lg shadow-md text-center min-h-[80px] flex items-center justify-center">
+            <p id="feedback-text" class="text-gray-500">Your coaching advice will appear here.</p>
+        </div>
+    </div>
+
+    <!-- Modal Structure -->
+    <div id="modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div id="modal-backdrop" class="fixed inset-0 bg-black bg-opacity-50"></div>
+        <div id="modal-content" class="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-y-auto p-6 z-10 transform scale-95">
+            <div class="flex justify-between items-center border-b pb-3 mb-4">
+                <h2 id="modal-title" class="text-2xl font-bold"></h2>
+                <button id="modal-close" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+            </div>
+            <div id="modal-body" class="prose max-w-none text-gray-700 whitespace-pre-wrap"></div>
+        </div>
+    </div>
+
+
+    <script>
+        // --- DOM Elements ---
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const toggleButton = document.getElementById('toggle-button');
+        const drillButton = document.getElementById('drill-button');
+        const summaryButton = document.getElementById('summary-button');
+        const statusOverlay = document.getElementById('status-overlay');
+        const statusText = document.getElementById('status-text');
+        const feedbackText = document.getElementById('feedback-text');
+        const modal = document.getElementById('modal');
+        const modalBackdrop = document.getElementById('modal-backdrop');
+        const modalContent = document.getElementById('modal-content');
+        const modalTitle = document.getElementById('modal-title');
+        const modalBody = document.getElementById('modal-body');
+        const modalClose = document.getElementById('modal-close');
+
+
+        // --- State and Configuration ---
+        let stream;
+        let coachingTimeout = null;
+        let isCoaching = false;
+        let sessionFeedbackLog = [];
+        const CAPTURE_INTERVAL = 10000; // 10 seconds
+
+        // --- Gemini API Configuration ---
+        const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent`;
+        const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent`;
+        const API_KEY = ""; // The platform will provide the key
+
+        const VISION_PROMPT = `You are an expert tennis coach analyzing a tennis player's form from a single image. Your analysis should be based on the 8 phases of a world-class stroke: Split Step, Positioning, Unit Turn, Back Swing, Acceleration, Contact, Follow Through, and Recovery. After analyzing all 8 phases, your task is to identify the single most critical area for improvement. Your entire output MUST be a single, concise sentence that summarizes this one key piece of advice. This advice must be a maximum of 2 sentences and under 30 words. For example: 'Focus on extending your wrist more during the backswing for better racket lag.' or 'Your unit turn looks great, but try to get your contact point further in front.' If you cannot identify any clear flaw or if the player's form looks good, do not return any text. Do not provide the full 8-point breakdown in your response.`;
+
+
+        // --- Event Listeners ---
+        toggleButton.addEventListener('click', toggleCoaching);
+        drillButton.addEventListener('click', getDrillOfTheDay);
+        summaryButton.addEventListener('click', summarizeSession);
+        modalClose.addEventListener('click', closeModal);
+        modalBackdrop.addEventListener('click', closeModal);
+
+        // --- Core Functions ---
+        async function toggleCoaching() {
+            if (isCoaching) {
+                stopCoaching();
+            } else {
+                await startCoaching();
+            }
+        }
+
+        async function startCamera() {
+            if (stream) return; // Camera is already running
+            try {
+                updateStatus('Requesting camera access...', true);
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' }, // Prefer rear camera
+                    audio: false
+                });
+                video.srcObject = stream;
+                
+                await new Promise((resolve) => {
+                    video.addEventListener('loadedmetadata', resolve, { once: true });
+                });
+
+                await video.play();
+                updateStatus('Camera started.', true);
+            } catch (error) {
+                console.error('Error accessing camera:', error);
+                updateStatus('Could not access camera. Please grant permission.', false, true);
+                throw error; // Propagate error to stop coaching start
+            }
+        }
+        
+        async function startCoaching() {
+            isCoaching = true;
+            sessionFeedbackLog = []; // Reset log for new session
+            summaryButton.classList.add('hidden');
+            drillButton.disabled = true;
+            toggleButton.textContent = 'Stop Coaching';
+            toggleButton.classList.replace('bg-blue-600', 'bg-red-600');
+            toggleButton.classList.replace('hover:bg-blue-700', 'hover:bg-red-700');
+            feedbackText.textContent = "Let's begin! I'll provide feedback shortly.";
+
+            try {
+                await startCamera();
+                updateStatus('Coaching started. Capturing first clip...', true, false, true);
+                coachingLoop(); // Initial immediate capture, it will then schedule itself
+            } catch (error) {
+                 // If camera fails, revert state
+                stopCoaching();
+            }
+        }
+
+        function stopCoaching() {
+            isCoaching = false;
+            drillButton.disabled = false;
+            if (coachingTimeout) {
+                clearTimeout(coachingTimeout);
+                coachingTimeout = null;
+            }
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+                video.srcObject = null;
+            }
+            if(sessionFeedbackLog.length > 0){
+                summaryButton.classList.remove('hidden');
+            }
+            toggleButton.textContent = 'Start Coaching';
+            toggleButton.classList.replace('bg-red-600', 'bg-blue-600');
+            toggleButton.classList.replace('hover:bg-red-700', 'hover:bg-blue-700');
+            updateStatus('Coaching stopped.', false);
+            feedbackText.textContent = 'Your coaching advice will appear here.';
+        }
+
+        async function coachingLoop() {
+            if (!isCoaching) return;
+            
+            try {
+                updateStatus('Capturing your form...', true, false, true);
+                const base64Image = captureFrame();
+                if (!base64Image) throw new Error("Failed to capture frame.");
+
+                updateStatus('Analyzing your form with Gemini...', true, false, true);
+                const analysisText = await analyzeFrame(base64Image);
+
+                if (analysisText) {
+                    feedbackText.textContent = analysisText;
+                    sessionFeedbackLog.push(analysisText);
+                    updateStatus('Generating audio feedback...', true, false, true);
+                    await speakFeedback(analysisText);
+                } else {
+                     updateStatus(`Looking good!`, true);
+                }
+                
+            } catch (error) {
+                console.error("Error in coaching loop:", error);
+                updateStatus('An error occurred. Retrying soon.', true, true);
+                feedbackText.textContent = "Sorry, I couldn't analyze that shot. Let's try again.";
+            } finally {
+                if (isCoaching) {
+                    updateStatus(`Next analysis in ${CAPTURE_INTERVAL / 1000}s.`, true);
+                    coachingTimeout = setTimeout(coachingLoop, CAPTURE_INTERVAL);
+                }
+            }
+        }
+        
+        async function getDrillOfTheDay() {
+            const prompt = `You are an expert tennis coach. Generate a creative and effective tennis drill for a solo player that can be done against a wall or with self-feeding. The drill should focus on improving one of these key areas: forehand consistency, backhand topspin, serve placement, or footwork. Clearly describe the goal of the drill, the setup, and the steps to perform it in a concise, easy-to-understand format using markdown for structure (e.g., ### Goal, ### Setup, ### Steps).`;
+            openModal("Generating Drill...", "✨ Drill of the Day");
+            try {
+                const drillText = await generateText(prompt);
+                updateModalBody(drillText);
+            } catch (error) {
+                console.error("Error getting drill:", error);
+                updateModalBody("Sorry, I couldn't generate a drill right now. Please try again later.");
+            }
+        }
+        
+        async function summarizeSession() {
+            if (sessionFeedbackLog.length === 0) {
+                openModal("No feedback was recorded in the last session.", "📝 Session Summary");
+                return;
+            }
+            const feedbackString = sessionFeedbackLog.join('. ');
+            const prompt = `You are an encouraging tennis coach. Based on the following list of feedback given to a player during a practice session, write a brief summary. First, identify the most common area for improvement. Then, provide a short, positive message and one concrete tip for their next session. Use markdown for structure (e.g., ### Key Focus Area, ### Coach's Note). Feedback list: "${feedbackString}"`;
+            openModal("Analyzing your session...", "📝 Session Summary");
+             try {
+                const summaryText = await generateText(prompt);
+                updateModalBody(summaryText);
+            } catch (error)
+ {
+                console.error("Error summarizing session:", error);
+                updateModalBody("Sorry, I couldn't generate a summary right now. Please try again later.");
+            }
+        }
+        
+        async function generateText(prompt) {
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+            };
+            const response = await fetch(`${TEXT_API_URL}?key=${API_KEY}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) throw new Error(`API Error: ${response.status} ${response.statusText}`);
+            const result = await response.json();
+            return result.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
+        }
+
+        // --- Frame Capture and Analysis ---
+        function captureFrame() {
+            if (!stream || video.readyState < 2) return null;
+            const videoTrack = stream.getVideoTracks()[0];
+            const settings = videoTrack.getSettings();
+            canvas.width = settings.width;
+            canvas.height = settings.height;
+            const context = canvas.getContext('2d');
+            context.scale(-1, 1); // Flip horizontally
+            context.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+            return canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+        }
+
+        async function analyzeFrame(base64ImageData) {
+            const payload = {
+                contents: [{
+                    parts: [
+                        { text: VISION_PROMPT },
+                        { inlineData: { mimeType: "image/jpeg", data: base64ImageData } }
+                    ]
+                }],
+            };
+
+            const response = await fetch(`${TEXT_API_URL}?key=${API_KEY}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) throw new Error(`API Error: ${response.status} ${response.statusText}`);
+            const result = await response.json();
+            return result.candidates?.[0]?.content?.parts?.[0]?.text || null;
+        }
+        
+        // --- Audio and Modal ---
+        function speakFeedback(text) {
+            return new Promise(async (resolve, reject) => {
+                const payload = {
+                    contents: [{ parts: [{ text: `Say this in a clear, encouraging coach's voice: ${text}` }] }],
+                    generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } } },
+                    model: "gemini-2.5-flash-preview-tts"
+                };
+
+                try {
+                    const response = await fetch(`${TTS_API_URL}?key=${API_KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                    if (!response.ok) throw new Error(`TTS API Error: ${response.statusText}`);
+                    const result = await response.json();
+                    const audioData = result.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+                    const mimeType = result.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType;
+
+                    if (audioData && mimeType && mimeType.startsWith("audio/")) {
+                        const sampleRate = parseInt(mimeType.match(/rate=(\d+)/)[1], 10);
+                        const pcmData = base64ToArrayBuffer(audioData);
+                        const pcm16 = new Int16Array(pcmData);
+                        const wavBlob = pcmToWav(pcm16, 1, sampleRate);
+                        const audioUrl = URL.createObjectURL(wavBlob);
+                        const audio = new Audio(audioUrl);
+                        audio.onended = () => resolve();
+                        audio.onerror = (err) => { console.error("Error playing audio."); updateStatus('Error playing audio.', true, true); reject(err); };
+                        audio.play();
+                    } else {
+                        console.error("No audio data received.");
+                        resolve();
+                    }
+                } catch (error) {
+                    console.error("Failed to speak feedback:", error);
+                    reject(error);
+                }
+            });
+        }
+        
+        function openModal(bodyText, titleText) {
+            modalTitle.textContent = titleText;
+            modalBody.textContent = bodyText;
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                modalBackdrop.classList.remove('opacity-0');
+                modalContent.classList.remove('scale-95');
+            }, 10);
+        }
+
+        function updateModalBody(newText) {
+             modalBody.textContent = newText;
+        }
+
+        function closeModal() {
+            modalBackdrop.classList.add('opacity-0');
+            modalContent.classList.add('scale-95');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 300);
+        }
+
+        // --- Utility Functions ---
+        function updateStatus(message, show, isError = false, isPulsing = false) {
+            statusText.textContent = message;
+            statusOverlay.classList.toggle('opacity-0', !show);
+            statusOverlay.classList.toggle('bg-red-600', isError);
+            statusOverlay.classList.toggle('bg-opacity-60', !isError);
+            statusOverlay.classList.toggle('pulsing', isPulsing);
+        }
+
+        function base64ToArrayBuffer(base64) {
+            const binaryString = window.atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        function pcmToWav(pcmData, numChannels, sampleRate) {
+            const buffer = new ArrayBuffer(44 + pcmData.length * 2);
+            const view = new DataView(buffer);
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, 36 + pcmData.length * 2, true);
+            writeString(view, 8, 'WAVE');
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true); // PCM
+            view.setUint16(22, numChannels, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * 2 * numChannels, true);
+            view.setUint16(32, numChannels * 2, true);
+            view.setUint16(34, 16, true);
+            writeString(view, 36, 'data');
+            view.setUint32(40, pcmData.length * 2, true);
+            for (let i = 0; i < pcmData.length; i++) {
+                view.setInt16(44 + i * 2, pcmData[i], true);
+            }
+            return new Blob([view], { type: 'audio/wav' });
+        }
+
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        }
+    </script>
+</body>
+</html>
+
+
