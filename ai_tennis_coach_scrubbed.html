@@ -2,20 +2,19 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
     <title>Real-Time AI Tennis Coach</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            overscroll-behavior-y: contain; /* Prevents pull-to-refresh on mobile */
         }
-        .video-container {
+        #video-container {
             position: relative;
             width: 100%;
-            max-width: 800px;
-            margin: auto;
+            /* Set a large, fixed viewport height. This forces the container to be tall. */
+            height: 75vh; 
             border-radius: 0.75rem;
             overflow: hidden;
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
@@ -25,7 +24,7 @@
             display: block;
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            object-fit: cover; /* Fill the container without stretching */
         }
         #status-overlay {
             position: absolute;
@@ -43,65 +42,56 @@
             animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
         @keyframes pulse {
-            0%, 100% {
-                opacity: 1;
-            }
-            50% {
-                opacity: 0.7;
-            }
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
         }
-        #modal-backdrop {
-            transition: opacity 0.3s ease-in-out;
-        }
-        #modal-content {
-            transition: transform 0.3s ease-in-out;
-        }
+        #modal-backdrop { transition: opacity 0.3s ease-in-out; }
+        #modal-content { transition: transform 0.3s ease-in-out; }
     </style>
 </head>
-<body class="bg-gray-100 text-gray-800 flex flex-col items-center justify-center min-h-screen p-4">
+<body class="bg-gray-100 text-gray-800">
 
-    <div class="w-full max-w-4xl text-center mb-6">
-        <h1 class="text-4xl font-bold text-gray-900">AI Tennis Forehand Coach</h1>
-        <p class="text-lg text-gray-600 mt-2">Get real-time feedback on your form. Powered by Gemini.</p>
-    </div>
-
-    <div id="video-container" class="video-container">
-        <video id="video" playsinline autoplay></video>
-        <canvas id="canvas" class="hidden"></canvas>
-        <div id="status-overlay" class="opacity-0">
-            <p id="status-text">Initializing...</p>
+    <div class="w-full max-w-4xl mx-auto p-4">
+        <div class="text-center mb-4">
+            <h1 class="text-2xl sm:text-4xl font-bold text-gray-900">AI Tennis Forehand Coach</h1>
+            <p class="text-md sm:text-lg text-gray-600 mt-1">Real-time feedback powered by Gemini.</p>
         </div>
-    </div>
 
-    <div class="mt-6 flex flex-col items-center space-y-4 w-full max-w-4xl">
-        <div class="w-full max-w-md mb-2 bg-white p-4 rounded-lg shadow-md">
-            <label for="api-key-input" class="block text-sm font-medium text-gray-700 mb-1">Enter Your Gemini API Key:</label>
-            <div class="flex space-x-2">
-                <input type="password" id="api-key-input" class="flex-grow p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="Paste your API key here">
-                <button id="save-key-button" class="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">Save Key</button>
+        <div id="video-container">
+            <video id="video" playsinline autoplay></video>
+            <canvas id="canvas" class="hidden"></canvas>
+            <div id="status-overlay" class="opacity-0">
+                <p id="status-text">Initializing...</p>
             </div>
-            <p id="api-key-status" class="text-xs text-gray-500 mt-2">You need a free Gemini API key from <a href="https://aistudio.google.com/apikey" target="_blank" class="text-blue-600 hover:underline">Google AI Studio</a> to use this app.</p>
-        </div>
-        
-        <div class="flex items-center space-x-4">
-             <button id="toggle-button" class="px-8 py-4 bg-blue-600 text-white font-bold rounded-lg shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-transform transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:scale-100">
-                Start Coaching
-            </button>
-            <button id="flip-camera-button" class="hidden p-4 bg-gray-200 text-gray-700 rounded-full shadow-lg hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-2 2-2-2m-2 8l2-2 2 2"/>
-                </svg>
-            </button>
         </div>
 
+        <div class="flex flex-col items-center space-y-4 w-full mt-4">
+            <div class="w-full max-w-md bg-white p-4 rounded-lg shadow-md">
+                <label for="api-key-input" class="block text-sm font-medium text-gray-700 mb-1">Enter Your Gemini API Key:</label>
+                <div class="flex space-x-2">
+                    <input type="password" id="api-key-input" class="flex-grow p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="Paste your API key here">
+                    <button id="save-key-button" class="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">Save Key</button>
+                </div>
+                <p id="api-key-status" class="text-xs text-gray-500 mt-2">You need a free Gemini API key from <a href="https://aistudio.google.com/apikey" target="_blank" class="text-blue-600 hover:underline">Google AI Studio</a> to use this app.</p>
+            </div>
+            
+            <div class="flex items-center space-x-4">
+                 <button id="toggle-button" class="px-8 py-4 bg-blue-600 text-white font-bold rounded-lg shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-transform transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:scale-100">
+                    Start Coaching
+                </button>
+                <button id="flip-camera-button" class="hidden p-4 bg-gray-200 text-gray-700 rounded-full shadow-lg hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5m7 10v-5h-5M6.343 17.657A8 8 0 1117.657 6.343 8 8 0 016.343 17.657z" />
+                    </svg>
+                </button>
+            </div>
 
-         <button id="summary-button" class="hidden px-8 py-4 bg-purple-500 text-white font-bold rounded-lg shadow-lg hover:bg-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50 transition-transform transform hover:scale-105">
-            ✨ Summarize My Session
-        </button>
-        <div id="feedback-container" class="w-full bg-white p-4 rounded-lg shadow-md min-h-[80px] flex items-center justify-center">
-            <p id="feedback-text" class="text-gray-500 text-center">Your coaching advice will appear here.</p>
+             <button id="summary-button" class="hidden px-8 py-4 bg-purple-500 text-white font-bold rounded-lg shadow-lg hover:bg-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50 transition-transform transform hover:scale-105">
+                ✨ Summarize My Session
+            </button>
+            <div id="feedback-container" class="w-full bg-white p-4 rounded-lg shadow-md min-h-[80px] flex items-center justify-center">
+                <p id="feedback-text" class="text-gray-500 text-center">Your coaching advice will appear here.</p>
+            </div>
         </div>
     </div>
 
@@ -117,10 +107,8 @@
         </div>
     </div>
 
-
     <script>
         // --- DOM Elements ---
-        const videoContainer = document.getElementById('video-container');
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const toggleButton = document.getElementById('toggle-button');
@@ -130,11 +118,6 @@
         const statusText = document.getElementById('status-text');
         const feedbackText = document.getElementById('feedback-text');
         const modal = document.getElementById('modal');
-        const modalBackdrop = document.getElementById('modal-backdrop');
-        const modalContent = document.getElementById('modal-content');
-        const modalTitle = document.getElementById('modal-title');
-        const modalBody = document.getElementById('modal-body');
-        const modalClose = document.getElementById('modal-close');
         const apiKeyInput = document.getElementById('api-key-input');
         const saveKeyButton = document.getElementById('save-key-button');
         const apiKeyStatus = document.getElementById('api-key-status');
@@ -154,22 +137,18 @@
         // --- Gemini API Configuration ---
         const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent`;
         const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent`;
-
         const VISION_PROMPT = `You are an expert tennis coach analyzing a tennis player's form from a single image. Your analysis should be based on the 8 phases of a world-class stroke: Split Step, Positioning, Unit Turn, Back Swing, Acceleration, Contact, Follow Through, and Recovery. After analyzing all 8 phases, your task is to identify the single most critical area for improvement. Your entire output MUST be a single, concise sentence that summarizes this one key piece of advice. This advice must be a maximum of 2 sentences and under 30 words. For example: 'Focus on extending your wrist more during the backswing for better racket lag.' or 'Your unit turn looks great, but try to get your contact point further in front.' If you cannot identify any clear flaw or if the player's form looks good, do not return any text. Do not provide the full 8-point breakdown in your response.`;
 
         // --- Event Listeners ---
         toggleButton.addEventListener('click', toggleCoaching);
         flipCameraButton.addEventListener('click', flipCamera);
-        summaryButton.addEventListener('click', summarizeSession);
-        modalClose.addEventListener('click', closeModal);
-        modalBackdrop.addEventListener('click', closeModal);
+        summaryButton.addEventListener('click', () => openModal(summarizeSession(), "📝 Session Summary"));
+        document.getElementById('modal-close').addEventListener('click', closeModal);
+        document.getElementById('modal-backdrop').addEventListener('click', closeModal);
         saveKeyButton.addEventListener('click', saveApiKey);
-        window.addEventListener('resize', handleResize);
         document.addEventListener('DOMContentLoaded', initializeApp);
 
-
         // --- Core Functions ---
-        
         function initializeApp() {
             const savedKey = localStorage.getItem('gemini-api-key');
             if (savedKey) {
@@ -179,15 +158,6 @@
                 apiKeyStatus.classList.add('text-green-600');
             }
             checkApiKeyState();
-            handleResize(); // Set initial size
-        }
-        
-        function handleResize() {
-            if (window.innerHeight > window.innerWidth) {
-                videoContainer.style.aspectRatio = '9 / 16';
-            } else {
-                videoContainer.style.aspectRatio = '16 / 9';
-            }
         }
 
         function saveApiKey() {
@@ -198,18 +168,17 @@
                 apiKeyStatus.textContent = 'API Key saved successfully!';
                 apiKeyStatus.classList.add('text-green-600');
                 apiKeyStatus.classList.remove('text-red-600');
-                checkApiKeyState();
             } else {
                 apiKeyStatus.textContent = 'Please enter a valid API key.';
                 apiKeyStatus.classList.add('text-red-600');
                 apiKeyStatus.classList.remove('text-green-600');
             }
+            checkApiKeyState();
         }
         
         function checkApiKeyState() {
-            const hasKey = !!userApiKey;
-            toggleButton.disabled = !hasKey;
-            if (!hasKey) {
+            toggleButton.disabled = !userApiKey.trim();
+            if (!userApiKey.trim()) {
                 feedbackText.textContent = 'Please enter and save your Gemini API key to begin.';
             } else if (!isCoaching) {
                 feedbackText.textContent = 'Your coaching advice will appear here.';
@@ -217,34 +186,27 @@
         }
         
         async function toggleCoaching() {
-            if (isCoaching) {
-                stopCoaching();
-            } else {
-                await startCoaching();
-            }
+            if (isCoaching) stopCoaching();
+            else await startCoaching();
         }
 
         async function startCamera() {
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
             }
-            // Request both video and audio
             const constraints = { video: { facingMode: currentFacingMode }, audio: true };
             try {
                 updateStatus('Requesting camera & mic access...', true);
                 stream = await navigator.mediaDevices.getUserMedia(constraints);
-                
-                // Set video source but keep it muted in the HTML element
                 video.srcObject = stream;
                 video.muted = true; 
                 await video.play();
 
-                // Web Audio API setup for silent mic input
-                if (!audioContext) {
+                if (!audioContext || audioContext.state === 'closed') {
                     audioContext = new (window.AudioContext || window.webkitAudioContext)();
                     const microphoneSource = audioContext.createMediaStreamSource(stream);
                     gainNode = audioContext.createGain();
-                    gainNode.gain.setValueAtTime(0, audioContext.currentTime); // Mute microphone
+                    gainNode.gain.setValueAtTime(0, audioContext.currentTime);
                     microphoneSource.connect(gainNode);
                     gainNode.connect(audioContext.destination);
                 }
@@ -255,9 +217,7 @@
                     const devices = await navigator.mediaDevices.enumerateDevices();
                     hasMultipleCameras = devices.filter(d => d.kind === 'videoinput').length > 1;
                 }
-                if (hasMultipleCameras) {
-                    flipCameraButton.classList.remove('hidden');
-                }
+                if (hasMultipleCameras) flipCameraButton.classList.remove('hidden');
             } catch (error) {
                 console.error('Error accessing camera/mic:', error);
                 updateStatus('Camera/mic access denied. Please enable permissions.', false, true);
@@ -335,30 +295,24 @@
             }
         }
         
-        async function summarizeSession() {
-            if (sessionFeedbackLog.length === 0) {
-                openModal("No feedback was recorded in this session.", "📝 Session Summary");
-                return;
-            }
+        function summarizeSession() {
+            if (sessionFeedbackLog.length === 0) return "No feedback was recorded in this session.";
+            
             const feedbackString = sessionFeedbackLog.join('. ');
             const prompt = `You are an encouraging tennis coach. Based on the following list of feedback given to a player during a practice session, write a brief summary. First, identify the most common area for improvement. Then, provide a short, positive message and one concrete tip for their next session. Use markdown for structure (e.g., ### Key Focus Area, ### Coach's Note). Feedback list: "${feedbackString}"`;
+            
             openModal("Analyzing your session...", "📝 Session Summary");
-             try {
-                const summaryText = await generateText(prompt);
-                updateModalBody(summaryText);
-            } catch (error) {
-                console.error("Error summarizing session:", error);
-                updateModalBody("Sorry, I couldn't generate a summary right now.");
-            }
+            generateText(prompt)
+                .then(summaryText => document.getElementById('modal-body').textContent = summaryText)
+                .catch(error => {
+                    console.error("Error summarizing session:", error);
+                    document.getElementById('modal-body').textContent = "Sorry, I couldn't generate a summary right now.";
+                });
         }
         
         async function generateText(prompt) {
             const payload = { contents: [{ parts: [{ text: prompt }] }] };
-            const response = await fetch(`${TEXT_API_URL}?key=${userApiKey}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            const response = await fetch(`${TEXT_API_URL}?key=${userApiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             if (!response.ok) throw new Error(`API Error: ${response.status} ${response.statusText}`);
             const result = await response.json();
             return result.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
@@ -366,8 +320,7 @@
 
         function captureFrame() {
             if (!stream || !video.srcObject || video.readyState < 2) return null;
-            const videoTrack = stream.getVideoTracks()[0];
-            const settings = videoTrack.getSettings();
+            const settings = stream.getVideoTracks()[0].getSettings();
             canvas.width = settings.width;
             canvas.height = settings.height;
             const context = canvas.getContext('2d');
@@ -381,14 +334,8 @@
         }
 
         async function analyzeFrame(base64ImageData) {
-            const payload = {
-                contents: [{ parts: [{ text: VISION_PROMPT }, { inlineData: { mimeType: "image/jpeg", data: base64ImageData } }] }],
-            };
-            const response = await fetch(`${TEXT_API_URL}?key=${userApiKey}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            const payload = { contents: [{ parts: [{ text: VISION_PROMPT }, { inlineData: { mimeType: "image/jpeg", data: base64ImageData } }] }] };
+            const response = await fetch(`${TEXT_API_URL}?key=${userApiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             if (!response.ok) throw new Error(`API Error: ${response.status} ${response.statusText}`);
             const result = await response.json();
             return result.candidates?.[0]?.content?.parts?.[0]?.text || null;
@@ -398,50 +345,30 @@
             if (!text || !audioContext) return Promise.resolve();
             updateStatus('Playing feedback...', true);
             return new Promise(async (resolve, reject) => {
-                const payload = {
-                    contents: [{ parts: [{ text: text }] }],
-                    generationConfig: { 
-                        responseModalities: ["AUDIO"], 
-                        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } } 
-                    }
-                };
+                const payload = { contents: [{ parts: [{ text }] }], generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } } } };
                 try {
                     const response = await fetch(`${TTS_API_URL}?key=${userApiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
                     if (!response.ok) throw new Error(`TTS API Error: ${response.status} ${response.statusText}`);
-                    
                     const result = await response.json();
                     const audioData = result.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
                     const mimeType = result.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType;
+                    if (!audioData) throw new Error("No audio data received");
 
-                    if (audioData && mimeType?.startsWith("audio/")) {
-                        const sampleRateMatch = mimeType.match(/rate=(\d+)/);
-                        if (!sampleRateMatch) throw new Error("Sample rate not found");
-                        
-                        const sampleRate = parseInt(sampleRateMatch[1], 10);
-                        const pcmData = base64ToArrayBuffer(audioData);
-                        const pcm16 = new Int16Array(pcmData);
-                        const wavBlob = pcmToWav(pcm16, 1, sampleRate);
-                        const arrayBuffer = await wavBlob.arrayBuffer();
+                    const sampleRate = parseInt(mimeType.match(/rate=(\d+)/)[1], 10);
+                    const pcmData = base64ToArrayBuffer(audioData);
+                    const wavBlob = pcmToWav(new Int16Array(pcmData), 1, sampleRate);
+                    const arrayBuffer = await wavBlob.arrayBuffer();
 
-                        audioContext.decodeAudioData(arrayBuffer, 
-                            (buffer) => {
-                                const source = audioContext.createBufferSource();
-                                source.buffer = buffer;
-                                source.connect(audioContext.destination);
-                                source.onended = () => {
-                                    if(isCoaching) updateStatus(`Next analysis in ${CAPTURE_INTERVAL / 1000}s.`, true);
-                                    resolve();
-                                };
-                                source.start(0);
-                            }, 
-                            (error) => {
-                                console.error('Error decoding audio data:', error);
-                                reject(error);
-                            }
-                        );
-                    } else {
-                        throw new Error("No audio data received");
-                    }
+                    audioContext.decodeAudioData(arrayBuffer, (buffer) => {
+                        const source = audioContext.createBufferSource();
+                        source.buffer = buffer;
+                        source.connect(audioContext.destination);
+                        source.onended = () => {
+                            if(isCoaching) updateStatus(`Next analysis in ${CAPTURE_INTERVAL / 1000}s.`, true);
+                            resolve();
+                        };
+                        source.start(0);
+                    }, (e) => reject(e));
                 } catch (error) {
                     console.error("Failed to speak feedback:", error);
                     updateStatus('Error playing audio.', true, true);
@@ -451,25 +378,19 @@
         }
         
         function openModal(bodyText, titleText) {
-            modalTitle.textContent = titleText;
-            modalBody.textContent = bodyText;
+            document.getElementById('modal-title').textContent = titleText;
+            document.getElementById('modal-body').textContent = bodyText;
             modal.classList.remove('hidden');
             setTimeout(() => {
-                modalBackdrop.classList.remove('opacity-0');
-                modalContent.classList.remove('scale-95');
+                document.getElementById('modal-backdrop').classList.remove('opacity-0');
+                document.getElementById('modal-content').classList.remove('scale-95');
             }, 10);
         }
 
-        function updateModalBody(newText) {
-             modalBody.textContent = newText;
-        }
-
         function closeModal() {
-            modalBackdrop.classList.add('opacity-0');
-            modalContent.classList.add('scale-95');
-            setTimeout(() => {
-                modal.classList.add('hidden');
-            }, 300);
+            document.getElementById('modal-backdrop').classList.add('opacity-0');
+            document.getElementById('modal-content').classList.add('scale-95');
+            setTimeout(() => modal.classList.add('hidden'), 300);
         }
 
         function updateStatus(message, show, isError = false, isPulsing = false) {
@@ -481,7 +402,7 @@
         }
 
         function base64ToArrayBuffer(base64) {
-            const binaryString = window.atob(base64);
+            const binaryString = atob(base64);
             const len = binaryString.length;
             const bytes = new Uint8Array(len);
             for (let i = 0; i < len; i++) {
@@ -496,6 +417,7 @@
             const bitsPerSample = 16;
             const blockAlign = numChannels * bitsPerSample / 8;
             const byteRate = sampleRate * blockAlign;
+            const writeString = (v, offset, s) => { for (let i = 0; i < s.length; i++) v.setUint8(offset + i, s.charCodeAt(i)); };
             writeString(view, 0, 'RIFF');
             view.setUint32(4, 36 + pcmData.length * 2, true);
             writeString(view, 8, 'WAVE');
@@ -513,12 +435,6 @@
                 view.setInt16(44 + i * 2, pcmData[i], true);
             }
             return new Blob([view], { type: 'audio/wav' });
-        }
-
-        function writeString(view, offset, string) {
-            for (let i = 0; i < string.length; i++) {
-                view.setUint8(offset + i, string.charCodeAt(i));
-            }
         }
     </script>
 </body>
