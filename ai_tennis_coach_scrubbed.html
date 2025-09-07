@@ -18,12 +18,14 @@
             border-radius: 0.75rem;
             overflow: hidden;
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            aspect-ratio: 16 / 9;
+            background-color: #000;
         }
         #video {
             display: block;
             width: 100%;
-            height: auto;
-            transform: scaleX(-1); /* Mirror mode */
+            height: 100%;
+            object-fit: cover;
         }
         #status-overlay {
             position: absolute;
@@ -48,7 +50,6 @@
                 opacity: 0.7;
             }
         }
-        /* Modal Styles */
         #modal-backdrop {
             transition: opacity 0.3s ease-in-out;
         }
@@ -64,7 +65,7 @@
         <p class="text-lg text-gray-600 mt-2">Get real-time feedback on your form. Powered by Gemini.</p>
     </div>
 
-    <div class="video-container bg-black">
+    <div id="video-container" class="video-container">
         <video id="video" playsinline autoplay muted></video>
         <canvas id="canvas" class="hidden"></canvas>
         <div id="status-overlay" class="opacity-0">
@@ -82,9 +83,19 @@
             <p id="api-key-status" class="text-xs text-gray-500 mt-2">You need a free Gemini API key from <a href="https://aistudio.google.com/apikey" target="_blank" class="text-blue-600 hover:underline">Google AI Studio</a> to use this app.</p>
         </div>
         
-        <button id="toggle-button" class="px-8 py-4 bg-blue-600 text-white font-bold rounded-lg shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-transform transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:scale-100">
-            Start Coaching
-        </button>
+        <div class="flex items-center space-x-4">
+             <button id="toggle-button" class="px-8 py-4 bg-blue-600 text-white font-bold rounded-lg shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-transform transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:scale-100">
+                Start Coaching
+            </button>
+            <button id="flip-camera-button" class="hidden p-4 bg-gray-200 text-gray-700 rounded-full shadow-lg hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-2 2-2-2m-2 8l2-2 2 2"/>
+                </svg>
+            </button>
+        </div>
+
 
          <button id="summary-button" class="hidden px-8 py-4 bg-purple-500 text-white font-bold rounded-lg shadow-lg hover:bg-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50 transition-transform transform hover:scale-105">
             ✨ Summarize My Session
@@ -113,6 +124,7 @@
         const canvas = document.getElementById('canvas');
         const toggleButton = document.getElementById('toggle-button');
         const summaryButton = document.getElementById('summary-button');
+        const flipCameraButton = document.getElementById('flip-camera-button');
         const statusOverlay = document.getElementById('status-overlay');
         const statusText = document.getElementById('status-text');
         const feedbackText = document.getElementById('feedback-text');
@@ -133,7 +145,10 @@
         let isCoaching = false;
         let sessionFeedbackLog = [];
         let userApiKey = '';
-        const CAPTURE_INTERVAL = 10000; // 10 seconds
+        let hasMultipleCameras = false;
+        let currentFacingMode = 'environment';
+        let isAudioPlaying = false;
+        const CAPTURE_INTERVAL = 10000;
 
         // --- Gemini API Configuration ---
         const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent`;
@@ -144,6 +159,7 @@
 
         // --- Event Listeners ---
         toggleButton.addEventListener('click', toggleCoaching);
+        flipCameraButton.addEventListener('click', flipCamera);
         summaryButton.addEventListener('click', summarizeSession);
         modalClose.addEventListener('click', closeModal);
         modalBackdrop.addEventListener('click', closeModal);
@@ -199,43 +215,70 @@
         }
 
         async function startCamera() {
-            if (stream) return; // Camera is already running
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+
+            const constraints = {
+                video: {
+                    facingMode: currentFacingMode
+                },
+                audio: false
+            };
+
             try {
                 updateStatus('Requesting camera access...', true);
-                stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'environment' }, // Prefer rear camera
-                    audio: false
-                });
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
                 video.srcObject = stream;
                 
-                await new Promise((resolve) => {
-                    video.addEventListener('loadedmetadata', resolve, { once: true });
-                });
-
+                // This replaces the previous, more complex promise structure.
+                // Awaiting video.play() directly is more robust against autoplay errors.
                 await video.play();
+                
+                // Mirror the video if it's the front camera ('user')
+                video.style.transform = currentFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+                
                 updateStatus('Camera started.', true);
+
+                // Check for multiple cameras only once
+                if (!hasMultipleCameras) {
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    const videoInputs = devices.filter(d => d.kind === 'videoinput');
+                    if (videoInputs.length > 1) {
+                        hasMultipleCameras = true;
+                    }
+                }
+                
+                if (hasMultipleCameras) {
+                    flipCameraButton.classList.remove('hidden');
+                }
+
             } catch (error) {
                 console.error('Error accessing camera:', error);
-                updateStatus('Could not access camera. Please grant permission.', false, true);
-                throw error; // Propagate error to stop coaching start
+                updateStatus('Camera access denied. Please enable camera permissions.', false, true);
+                throw error;
             }
+        }
+
+        async function flipCamera() {
+            currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+            await startCamera();
         }
         
         async function startCoaching() {
             isCoaching = true;
-            sessionFeedbackLog = []; // Reset log for new session
+            sessionFeedbackLog = [];
             summaryButton.classList.add('hidden');
             toggleButton.textContent = 'Stop Coaching';
             toggleButton.classList.replace('bg-blue-600', 'bg-red-600');
             toggleButton.classList.replace('hover:bg-blue-700', 'hover:bg-red-700');
             feedbackText.textContent = "Let's begin! I'll provide feedback shortly.";
-
+            
             try {
                 await startCamera();
                 updateStatus('Coaching started. Capturing first clip...', true, false, true);
-                coachingLoop(); // Initial immediate capture, it will then schedule itself
+                coachingLoop(); 
             } catch (error) {
-                 // If camera fails, revert state
                 stopCoaching();
             }
         }
@@ -246,17 +289,20 @@
                 clearTimeout(coachingTimeout);
                 coachingTimeout = null;
             }
+
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
                 stream = null;
                 video.srcObject = null;
             }
+            
             if(sessionFeedbackLog.length > 0){
                 summaryButton.classList.remove('hidden');
             }
             toggleButton.textContent = 'Start Coaching';
             toggleButton.classList.replace('bg-red-600', 'bg-blue-600');
             toggleButton.classList.replace('hover:bg-red-700', 'hover:bg-blue-700');
+            flipCameraButton.classList.add('hidden');
             updateStatus('Coaching stopped.', false);
             checkApiKeyState();
         }
@@ -265,20 +311,29 @@
             if (!isCoaching) return;
             
             try {
+                if (isAudioPlaying) {
+                    coachingTimeout = setTimeout(coachingLoop, 2000);
+                    return;
+                }
+
                 updateStatus('Capturing your form...', true, false, true);
                 const base64Image = captureFrame();
-                if (!base64Image) throw new Error("Failed to capture frame.");
 
-                updateStatus('Analyzing your form with Gemini...', true, false, true);
-                const analysisText = await analyzeFrame(base64Image);
+                if (base64Image) {
+                    updateStatus('Analyzing your form with Gemini...', true, false, true);
+                    const analysisText = await analyzeFrame(base64Image);
 
-                if (analysisText) {
-                    feedbackText.textContent = analysisText;
-                    sessionFeedbackLog.push(analysisText);
-                    updateStatus('Generating audio feedback...', true, false, true);
-                    await speakFeedback(analysisText);
+                    if (analysisText) {
+                        feedbackText.textContent = analysisText;
+                        sessionFeedbackLog.push(analysisText);
+                        updateStatus('Generating audio feedback...', true, false, true);
+                        await speakFeedback(analysisText);
+                    } else {
+                         updateStatus(`Looking good! Next analysis in ${CAPTURE_INTERVAL / 1000}s.`, true);
+                    }
                 } else {
-                     updateStatus(`Looking good!`, true);
+                    console.warn("Failed to capture frame, stream might be initializing. Will retry.");
+                    updateStatus('Waiting for camera...', true, false, true);
                 }
                 
             } catch (error) {
@@ -287,7 +342,6 @@
                 feedbackText.textContent = "Sorry, I couldn't analyze that shot. Let's try again.";
             } finally {
                 if (isCoaching) {
-                    updateStatus(`Next analysis in ${CAPTURE_INTERVAL / 1000}s.`, true);
                     coachingTimeout = setTimeout(coachingLoop, CAPTURE_INTERVAL);
                 }
             }
@@ -324,16 +378,21 @@
             return result.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
         }
 
-        // --- Frame Capture and Analysis ---
         function captureFrame() {
-            if (!stream || video.readyState < 2) return null;
+            if (!stream || !video.srcObject || video.readyState < 2) return null;
             const videoTrack = stream.getVideoTracks()[0];
             const settings = videoTrack.getSettings();
             canvas.width = settings.width;
             canvas.height = settings.height;
             const context = canvas.getContext('2d');
-            context.scale(-1, 1); // Flip horizontally
-            context.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+            
+            // Adjust for mirrored front camera when capturing
+            if (currentFacingMode === 'user') {
+                context.scale(-1, 1);
+                context.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+            } else {
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            }
             return canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
         }
 
@@ -358,38 +417,59 @@
             return result.candidates?.[0]?.content?.parts?.[0]?.text || null;
         }
         
-        // --- Audio and Modal ---
         function speakFeedback(text) {
             return new Promise(async (resolve, reject) => {
+                isAudioPlaying = true;
                 const payload = {
-                    contents: [{ parts: [{ text: `Say this in a clear, encouraging coach's voice: ${text}` }] }],
-                    generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } } },
-                    model: "gemini-2.5-flash-preview-tts"
+                    contents: [{ parts: [{ text: text }] }],
+                    generationConfig: { 
+                        responseModalities: ["AUDIO"], 
+                        speechConfig: { 
+                            voiceConfig: { 
+                                prebuiltVoiceConfig: { voiceName: "Kore" } 
+                            } 
+                        } 
+                    }
                 };
 
                 try {
                     const response = await fetch(`${TTS_API_URL}?key=${userApiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                    if (!response.ok) throw new Error(`TTS API Error: ${response.statusText}`);
+                    if (!response.ok) {
+                        const errorBody = await response.text();
+                        console.error("TTS API Error Body:", errorBody);
+                        throw new Error(`TTS API Error: ${response.status} ${response.statusText}`);
+                    }
                     const result = await response.json();
                     const audioData = result.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
                     const mimeType = result.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType;
 
                     if (audioData && mimeType && mimeType.startsWith("audio/")) {
-                        const sampleRate = parseInt(mimeType.match(/rate=(\d+)/)[1], 10);
+                        const sampleRateMatch = mimeType.match(/rate=(\d+)/);
+                        if (!sampleRateMatch) throw new Error("Sample rate not found in mimeType");
+                        
+                        const sampleRate = parseInt(sampleRateMatch[1], 10);
                         const pcmData = base64ToArrayBuffer(audioData);
                         const pcm16 = new Int16Array(pcmData);
                         const wavBlob = pcmToWav(pcm16, 1, sampleRate);
                         const audioUrl = URL.createObjectURL(wavBlob);
                         const audio = new Audio(audioUrl);
-                        audio.onended = () => resolve();
-                        audio.onerror = (err) => { console.error("Error playing audio."); updateStatus('Error playing audio.', true, true); reject(err); };
+
+                        audio.onended = () => { isAudioPlaying = false; resolve(); };
+                        audio.onerror = (err) => { 
+                            console.error("Error playing audio.", err); 
+                            updateStatus('Error playing audio.', true, true); 
+                            isAudioPlaying = false; 
+                            reject(err); 
+                        };
                         audio.play();
                     } else {
-                        console.error("No audio data received.");
+                        console.error("No audio data received from TTS API.");
+                        isAudioPlaying = false;
                         resolve();
                     }
                 } catch (error) {
                     console.error("Failed to speak feedback:", error);
+                    isAudioPlaying = false;
                     reject(error);
                 }
             });
@@ -417,7 +497,6 @@
             }, 300);
         }
 
-        // --- Utility Functions ---
         function updateStatus(message, show, isError = false, isPulsing = false) {
             statusText.textContent = message;
             statusOverlay.classList.toggle('opacity-0', !show);
@@ -439,6 +518,10 @@
         function pcmToWav(pcmData, numChannels, sampleRate) {
             const buffer = new ArrayBuffer(44 + pcmData.length * 2);
             const view = new DataView(buffer);
+            const bitsPerSample = 16;
+            const blockAlign = numChannels * bitsPerSample / 8;
+            const byteRate = sampleRate * blockAlign;
+
             writeString(view, 0, 'RIFF');
             view.setUint32(4, 36 + pcmData.length * 2, true);
             writeString(view, 8, 'WAVE');
@@ -447,14 +530,16 @@
             view.setUint16(20, 1, true); // PCM
             view.setUint16(22, numChannels, true);
             view.setUint32(24, sampleRate, true);
-            view.setUint32(28, sampleRate * 2 * numChannels, true);
-            view.setUint16(32, numChannels * 2, true);
-            view.setUint16(34, 16, true);
+            view.setUint32(28, byteRate, true);
+            view.setUint16(32, blockAlign, true);
+            view.setUint16(34, bitsPerSample, true);
             writeString(view, 36, 'data');
             view.setUint32(40, pcmData.length * 2, true);
+            
             for (let i = 0; i < pcmData.length; i++) {
                 view.setInt16(44 + i * 2, pcmData[i], true);
             }
+            
             return new Blob([view], { type: 'audio/wav' });
         }
 
