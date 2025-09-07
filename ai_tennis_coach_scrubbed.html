@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale-1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Real-Time AI Tennis Coach</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -60,7 +60,7 @@
 <body class="bg-gray-100 text-gray-800 flex flex-col items-center justify-center min-h-screen p-4">
 
     <div class="w-full max-w-4xl text-center mb-6">
-        <h1 class="text-4xl font-bold text-gray-900">AI Tennis Coach</h1>
+        <h1 class="text-4xl font-bold text-gray-900">AI Tennis Forehand Coach</h1>
         <p class="text-lg text-gray-600 mt-2">Get real-time feedback on your form. Powered by Gemini.</p>
     </div>
 
@@ -73,11 +73,19 @@
     </div>
 
     <div class="mt-6 flex flex-col items-center space-y-4 w-full max-w-4xl">
+        <div class="w-full max-w-md mb-2 bg-white p-4 rounded-lg shadow-md">
+            <label for="api-key-input" class="block text-sm font-medium text-gray-700 mb-1">Enter Your Gemini API Key:</label>
+            <div class="flex space-x-2">
+                <input type="password" id="api-key-input" class="flex-grow p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="Paste your API key here">
+                <button id="save-key-button" class="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">Save Key</button>
+            </div>
+            <p id="api-key-status" class="text-xs text-gray-500 mt-2">You need a free Gemini API key from <a href="https://aistudio.google.com/apikey" target="_blank" class="text-blue-600 hover:underline">Google AI Studio</a> to use this app.</p>
+        </div>
         <div class="flex space-x-4">
             <button id="toggle-button" class="px-8 py-4 bg-blue-600 text-white font-bold rounded-lg shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-transform transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:scale-100">
                 Start Coaching
             </button>
-            <button id="drill-button" class="px-8 py-4 bg-green-500 text-white font-bold rounded-lg shadow-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 transition-transform transform hover:scale-105">
+            <button id="drill-button" class="px-8 py-4 bg-teal-500 text-white font-bold rounded-lg shadow-lg hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-opacity-50 transition-transform transform hover:scale-105 disabled:bg-gray-400 disabled:cursor-not-allowed disabled:scale-100">
                 ✨ Get Drill of the Day
             </button>
         </div>
@@ -118,6 +126,9 @@
         const modalTitle = document.getElementById('modal-title');
         const modalBody = document.getElementById('modal-body');
         const modalClose = document.getElementById('modal-close');
+        const apiKeyInput = document.getElementById('api-key-input');
+        const saveKeyButton = document.getElementById('save-key-button');
+        const apiKeyStatus = document.getElementById('api-key-status');
 
 
         // --- State and Configuration ---
@@ -125,12 +136,12 @@
         let coachingTimeout = null;
         let isCoaching = false;
         let sessionFeedbackLog = [];
+        let userApiKey = '';
         const CAPTURE_INTERVAL = 10000; // 10 seconds
 
         // --- Gemini API Configuration ---
         const TEXT_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent`;
         const TTS_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent`;
-        const API_KEY = ""; // The platform will provide the key
 
         const VISION_PROMPT = `You are an expert tennis coach analyzing a tennis player's form from a single image. Your analysis should be based on the 8 phases of a world-class stroke: Split Step, Positioning, Unit Turn, Back Swing, Acceleration, Contact, Follow Through, and Recovery. After analyzing all 8 phases, your task is to identify the single most critical area for improvement. Your entire output MUST be a single, concise sentence that summarizes this one key piece of advice. This advice must be a maximum of 2 sentences and under 30 words. For example: 'Focus on extending your wrist more during the backswing for better racket lag.' or 'Your unit turn looks great, but try to get your contact point further in front.' If you cannot identify any clear flaw or if the player's form looks good, do not return any text. Do not provide the full 8-point breakdown in your response.`;
 
@@ -141,8 +152,50 @@
         summaryButton.addEventListener('click', summarizeSession);
         modalClose.addEventListener('click', closeModal);
         modalBackdrop.addEventListener('click', closeModal);
+        saveKeyButton.addEventListener('click', saveApiKey);
+        document.addEventListener('DOMContentLoaded', initializeApp);
+
 
         // --- Core Functions ---
+        
+        function initializeApp() {
+            const savedKey = localStorage.getItem('gemini-api-key');
+            if (savedKey) {
+                userApiKey = savedKey;
+                apiKeyInput.value = savedKey;
+                apiKeyStatus.textContent = 'API Key loaded from your browser.';
+                apiKeyStatus.classList.add('text-green-600');
+            }
+            checkApiKeyState();
+        }
+
+        function saveApiKey() {
+            const key = apiKeyInput.value.trim();
+            if (key) {
+                localStorage.setItem('gemini-api-key', key);
+                userApiKey = key;
+                apiKeyStatus.textContent = 'API Key saved successfully!';
+                apiKeyStatus.classList.add('text-green-600');
+                apiKeyStatus.classList.remove('text-red-600');
+                checkApiKeyState();
+            } else {
+                apiKeyStatus.textContent = 'Please enter a valid API key.';
+                apiKeyStatus.classList.add('text-red-600');
+                apiKeyStatus.classList.remove('text-green-600');
+            }
+        }
+        
+        function checkApiKeyState() {
+            const hasKey = !!userApiKey;
+            toggleButton.disabled = !hasKey;
+            drillButton.disabled = !hasKey;
+            if (!hasKey) {
+                feedbackText.textContent = 'Please enter and save your Gemini API key to begin.';
+            } else if (!isCoaching) {
+                feedbackText.textContent = 'Your coaching advice will appear here.';
+            }
+        }
+        
         async function toggleCoaching() {
             if (isCoaching) {
                 stopCoaching();
@@ -213,7 +266,7 @@
             toggleButton.classList.replace('bg-red-600', 'bg-blue-600');
             toggleButton.classList.replace('hover:bg-red-700', 'hover:bg-blue-700');
             updateStatus('Coaching stopped.', false);
-            feedbackText.textContent = 'Your coaching advice will appear here.';
+            checkApiKeyState();
         }
 
         async function coachingLoop() {
@@ -271,8 +324,7 @@
              try {
                 const summaryText = await generateText(prompt);
                 updateModalBody(summaryText);
-            } catch (error)
- {
+            } catch (error) {
                 console.error("Error summarizing session:", error);
                 updateModalBody("Sorry, I couldn't generate a summary right now. Please try again later.");
             }
@@ -282,7 +334,7 @@
             const payload = {
                 contents: [{ parts: [{ text: prompt }] }],
             };
-            const response = await fetch(`${TEXT_API_URL}?key=${API_KEY}`, {
+            const response = await fetch(`${TEXT_API_URL}?key=${userApiKey}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -315,7 +367,7 @@
                 }],
             };
 
-            const response = await fetch(`${TEXT_API_URL}?key=${API_KEY}`, {
+            const response = await fetch(`${TEXT_API_URL}?key=${userApiKey}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -336,7 +388,7 @@
                 };
 
                 try {
-                    const response = await fetch(`${TTS_API_URL}?key=${API_KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                    const response = await fetch(`${TTS_API_URL}?key=${userApiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
                     if (!response.ok) throw new Error(`TTS API Error: ${response.statusText}`);
                     const result = await response.json();
                     const audioData = result.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
